@@ -33,25 +33,68 @@ const Game = () => {
     let localPlayer;
     const otherPlayers = {};
     const projectilesGroup = {};
+    const enemiesGroup = {};
 
     function preload() {
-      // Create a green texture for the player
-      const graphics = this.add.graphics();
-      graphics.fillStyle(0x00ff00, 1);
-      graphics.fillRect(0, 0, 32, 32);
-      graphics.generateTexture('frog', 32, 32);
-      graphics.destroy();
+      // Swamp background tile
+      const bgGraphics = this.add.graphics();
+      bgGraphics.fillStyle(0x1a2e1c, 1); // Dark swamp green
+      bgGraphics.fillRect(0, 0, 64, 64);
+      bgGraphics.fillStyle(0x2d4c2f, 1); // Lighter green patches
+      bgGraphics.fillCircle(16, 16, 10);
+      bgGraphics.fillCircle(48, 48, 8);
+      bgGraphics.fillCircle(50, 16, 12);
+      bgGraphics.generateTexture('bg_tile', 64, 64);
+      bgGraphics.destroy();
 
-      // Create a yellow texture for the projectile
+      // Magic Frog (Green body, blue wizard hat)
+      const frogGraphics = this.add.graphics();
+      frogGraphics.fillStyle(0x00ff00, 1); // Frog body
+      frogGraphics.fillRect(4, 12, 24, 20);
+      frogGraphics.fillStyle(0x0000ff, 1); // Wizard hat base
+      frogGraphics.fillRect(0, 8, 32, 4);
+      frogGraphics.fillStyle(0x0000ff, 1); // Wizard hat tip
+      frogGraphics.beginPath();
+      frogGraphics.moveTo(8, 8);
+      frogGraphics.lineTo(16, 0);
+      frogGraphics.lineTo(24, 8);
+      frogGraphics.closePath();
+      frogGraphics.fillPath();
+      frogGraphics.generateTexture('frog', 32, 32);
+      frogGraphics.destroy();
+
+      // Enemy Mushroom (Purple base, red cap with spots)
+      const mushGraphics = this.add.graphics();
+      mushGraphics.fillStyle(0x6a0dad, 1); // Purple stalk
+      mushGraphics.fillRect(10, 16, 12, 16);
+      mushGraphics.fillStyle(0xff0000, 1); // Red cap
+      mushGraphics.beginPath();
+      mushGraphics.arc(16, 16, 16, Math.PI, 0, false);
+      mushGraphics.closePath();
+      mushGraphics.fillPath();
+      mushGraphics.fillStyle(0xffffff, 1); // White spots
+      mushGraphics.fillCircle(8, 10, 3);
+      mushGraphics.fillCircle(24, 10, 3);
+      mushGraphics.fillCircle(16, 6, 4);
+      mushGraphics.generateTexture('enemy_mushroom', 32, 32);
+      mushGraphics.destroy();
+
+      // Glowing projectile
       const projGraphics = this.add.graphics();
       projGraphics.fillStyle(0xffff00, 1);
-      projGraphics.fillRect(0, 0, 8, 8);
-      projGraphics.generateTexture('projectile', 8, 8);
+      projGraphics.fillCircle(8, 8, 8);
+      projGraphics.fillStyle(0xffffff, 1);
+      projGraphics.fillCircle(8, 8, 4);
+      projGraphics.generateTexture('projectile', 16, 16);
       projGraphics.destroy();
     }
 
     function create() {
       const self = this;
+
+      // Add background
+      this.add.tileSprite(400, 300, 800, 600, 'bg_tile');
+
       this.projectiles = this.physics.add.group();
 
       socket.on('currentPlayers', (players) => {
@@ -100,6 +143,43 @@ const Game = () => {
           delete projectilesGroup[id];
         }
       });
+
+      // --- ENEMY SOCKET LISTENERS ---
+      socket.on('currentEnemies', (enemies) => {
+        Object.keys(enemies).forEach((id) => {
+          addEnemy(self, enemies[id]);
+        });
+      });
+
+      socket.on('newEnemy', (enemyInfo) => {
+        addEnemy(self, enemyInfo);
+      });
+
+      socket.on('enemyUpdates', (enemies) => {
+        Object.keys(enemies).forEach((id) => {
+          if (enemiesGroup[id]) {
+            enemiesGroup[id].setPosition(enemies[id].x, enemies[id].y);
+          }
+        });
+      });
+
+      socket.on('enemyDestroyed', (id) => {
+        if (enemiesGroup[id]) {
+          // simple death animation scaling
+          self.tweens.add({
+            targets: enemiesGroup[id],
+            scale: 0,
+            duration: 200,
+            onComplete: () => {
+              if(enemiesGroup[id]){
+                 enemiesGroup[id].destroy();
+                 delete enemiesGroup[id];
+              }
+            }
+          });
+        }
+      });
+      // ------------------------------
 
       cursors = this.input.keyboard.createCursorKeys();
       wasd = this.input.keyboard.addKeys({
@@ -158,14 +238,18 @@ const Game = () => {
     function addLocalPlayer(self, playerInfo) {
       localPlayer = self.physics.add.sprite(playerInfo.x, playerInfo.y, 'frog');
       localPlayer.setCollideWorldBounds(true);
-      // Optional: Add color tint based on playerInfo.color if needed
-      // localPlayer.setTint(parseInt('0x' + playerInfo.color));
     }
 
     function addOtherPlayer(self, playerInfo) {
       const otherPlayer = self.add.sprite(playerInfo.x, playerInfo.y, 'frog');
-      // otherPlayer.setTint(parseInt('0x' + playerInfo.color));
       otherPlayers[playerInfo.id] = otherPlayer;
+    }
+
+    function addEnemy(self, enemyInfo) {
+      if(!enemiesGroup[enemyInfo.id]){
+        const enemy = self.add.sprite(enemyInfo.x, enemyInfo.y, 'enemy_mushroom');
+        enemiesGroup[enemyInfo.id] = enemy;
+      }
     }
 
     return () => {
